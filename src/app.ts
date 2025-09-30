@@ -139,6 +139,46 @@ export async function createApp(): Promise<express.Application> {
 
   app.use('/otp', otpRouter);
 
+  // Privacy policy endpoint (must be before 404 handler)
+  app.get('/privacy', (req, res) => {
+    res.send(`
+  <!DOCTYPE html>
+  <html>
+  <head>
+      <title>Privacy Policy - WhatsApp OTP Service</title>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; line-height: 1.6; }
+        h1 { color: #333; }
+        h2 { color: #666; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+      </style>
+  </head>
+  <body>
+      <h1>Privacy Policy for WhatsApp OTP Service</h1>
+
+      <h2>Information We Collect</h2>
+      <p>We only collect phone numbers temporarily for the purpose of sending OTP verification codes via WhatsApp.</p>
+
+      <h2>How We Use Information</h2>
+      <p>Phone numbers are used solely to send one-time verification codes and are not stored permanently.</p>
+
+      <h2>Data Retention</h2>
+      <p>OTP codes and phone numbers are automatically deleted after verification or expiration (5 minutes).</p>
+
+      <h2>Third Party Services</h2>
+      <p>We use Meta's WhatsApp Business API to deliver verification messages.</p>
+
+      <h2>Contact</h2>
+      <p>For questions about this policy, contact: <a href="mailto:joeladukwarteng@gmail.com">joeladukwarteng@gmail.com</a></p>
+
+      <p><em>Last updated: 30th September 2025</em></p>
+  </body>
+  </html>
+    `);
+  });
+
+  // 404 handler (must be after all routes)
   app.use((req, res) => {
     res.status(404).json({
       success: false,
@@ -146,6 +186,7 @@ export async function createApp(): Promise<express.Application> {
     });
   });
 
+  // Error handler (must be last)
   app.use(
     (err: Error, req: express.Request, res: express.Response, _next: express.NextFunction) => {
       logger.error({ err, req: { method: req.method, url: req.url } }, 'Unhandled error');
