@@ -1,0 +1,538 @@
+openapi: 3.1.0
+info:
+  title: WhatsApp OTP Service
+  description: |
+    A secure microservice for sending and verifying one-time passwords (OTP) via WhatsApp.
+
+    Features:
+    - Send 6-digit OTP codes via WhatsApp (Meta or Twilio providers)
+    - Verify OTP codes with attempt limits and TTL
+    - HMAC-SHA256 signature verification for security
+    - Rate limiting per IP and phone number
+    - Idempotent requests with Idempotency-Key header
+    - Comprehensive monitoring and metrics
+
+    ## Authentication
+    All OTP endpoints require HMAC-SHA256 signature verification using the `X-Signature` header.
+
+    ## Rate Limits
+    - Per IP: 100 requests per 15-minute window
+    - Per phone number: 5 requests per 15-minute window
+
+    ## Idempotency
+    OTP request endpoint supports idempotency using the `Idempotency-Key` header.
+  version: 1.0.0
+  contact:
+    name: WhatsApp OTP Service
+    url: https://github.com/your-org/whatsapp-otp-service
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:3000
+    description: Local development server
+  - url: https://api.example.com
+    description: Production server
+
+paths:
+  /health:
+    get:
+      summary: Health check endpoint
+      description: Returns basic health status of the service
+      operationId: getHealth
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: "ok"
+                timestamp: "2024-01-15T10:30:00.000Z"
+                uptime: 3600.5
+                version: "1.0.0"
+
+  /ready:
+    get:
+      summary: Readiness check endpoint
+      description: Returns readiness status including dependencies
+      operationId: getReadiness
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadinessResponse'
+              example:
+                status: "ready"
+                timestamp: "2024-01-15T10:30:00.000Z"
+                checks:
+                  redis: "ok"
+        '503':
+          description: Service is not ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadinessErrorResponse'
+              example:
+                status: "not ready"
+                timestamp: "2024-01-15T10:30:00.000Z"
+                checks:
+                  redis: "failed"
+                error: "Service dependencies not available"
+
+  /metrics:
+    get:
+      summary: Prometheus metrics endpoint
+      description: Returns Prometheus-formatted metrics
+      operationId: getMetrics
+      tags:
+        - Monitoring
+      responses:
+        '200':
+          description: Metrics data
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: |
+                # HELP otp_requests_total Total number of OTP requests
+                # TYPE otp_requests_total counter
+                otp_requests_total 42
+                # HELP otp_verifications_total Total number of OTP verification attempts
+                # TYPE otp_verifications_total counter
+                otp_verifications_total 38
+
+  /otp/request:
+    post:
+      summary: Request OTP via WhatsApp
+      description: |
+        Send a 6-digit OTP code to the specified phone number via WhatsApp.
+
+        - OTP expires in 5 minutes (configurable)
+        - Cooldown period of 60 seconds between requests to same number
+        - Supports idempotent requests via Idempotency-Key header
+        - Rate limited per IP and phone number
+      operationId: requestOTP
+      tags:
+        - OTP
+      security:
+        - HmacAuth: []
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          schema:
+            type: string
+          description: Optional idempotency key for duplicate request prevention
+          example: "user123-20240115-103000"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OTPRequest'
+            examples:
+              valid_request:
+                summary: Valid OTP request
+                value:
+                  phoneNumber: "+1234567890"
+              international:
+                summary: International number
+                value:
+                  phoneNumber: "+44123456789"
+      responses:
+        '200':
+          description: OTP sent successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OTPRequestSuccess'
+              example:
+                success: true
+                message: "Verification code sent successfully"
+                messageId: "wamid.ABC123"
+        '400':
+          description: Bad request or cooldown active
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorResponse'
+                  - $ref: '#/components/schemas/CooldownErrorResponse'
+              examples:
+                invalid_phone:
+                  summary: Invalid phone number
+                  value:
+                    success: false
+                    error: "Invalid request data"
+                    details:
+                      - code: "invalid_string"
+                        message: "Invalid phone number format"
+                        path: ["phoneNumber"]
+                cooldown_active:
+                  summary: Cooldown period active
+                  value:
+                    success: false
+                    error: "Too many recent requests. Please wait before requesting another OTP."
+                    retryAfter: 45
+        '401':
+          description: Authentication failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error: "Authentication failed"
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ip_rate_limit:
+                  summary: IP rate limit exceeded
+                  value:
+                    success: false
+                    error: "Too many requests from this IP. Please try again later."
+                phone_rate_limit:
+                  summary: Phone number rate limit exceeded
+                  value:
+                    success: false
+                    error: "Too many requests for this phone number. Please try again later."
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error: "Failed to send verification code. Please try again."
+
+  /otp/verify:
+    post:
+      summary: Verify OTP code
+      description: |
+        Verify a 6-digit OTP code for the specified phone number.
+
+        - Maximum 5 verification attempts per OTP
+        - OTP is automatically deleted after successful verification
+        - Failed attempts are tracked and returned in response
+      operationId: verifyOTP
+      tags:
+        - OTP
+      security:
+        - HmacAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OTPVerification'
+            examples:
+              valid_verification:
+                summary: Valid OTP verification
+                value:
+                  phoneNumber: "+1234567890"
+                  code: "123456"
+      responses:
+        '200':
+          description: OTP verified successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OTPVerifySuccess'
+              example:
+                success: true
+                message: "Verification successful"
+        '400':
+          description: Invalid OTP or verification failed
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorResponse'
+                  - $ref: '#/components/schemas/OTPVerifyError'
+              examples:
+                invalid_code:
+                  summary: Invalid verification code
+                  value:
+                    success: false
+                    error: "Invalid verification code."
+                    attemptsRemaining: 4
+                expired_code:
+                  summary: Expired verification code
+                  value:
+                    success: false
+                    error: "Verification code has expired."
+                too_many_attempts:
+                  summary: Too many invalid attempts
+                  value:
+                    success: false
+                    error: "Too many invalid attempts. Please request a new verification code."
+                no_otp_found:
+                  summary: No OTP found
+                  value:
+                    success: false
+                    error: "Invalid or expired verification code."
+        '401':
+          description: Authentication failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error: "Authentication failed"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                success: false
+                error: "Internal server error"
+
+components:
+  securitySchemes:
+    HmacAuth:
+      type: apiKey
+      in: header
+      name: X-Signature
+      description: |
+        HMAC-SHA256 signature of the request body.
+        Format: `sha256=<hex_digest>`
+
+        Example calculation (Node.js):
+        ```javascript
+        const crypto = require('crypto');
+        const signature = crypto
+          .createHmac('sha256', secret)
+          .update(JSON.stringify(requestBody), 'utf8')
+          .digest('hex');
+        const headerValue = `sha256=${signature}`;
+        ```
+
+  schemas:
+    OTPRequest:
+      type: object
+      required:
+        - phoneNumber
+      properties:
+        phoneNumber:
+          type: string
+          pattern: '^\+?[1-9]\d{9,14}$'
+          description: Phone number in E.164 format (with or without + prefix)
+          example: "+1234567890"
+      additionalProperties: false
+
+    OTPVerification:
+      type: object
+      required:
+        - phoneNumber
+        - code
+      properties:
+        phoneNumber:
+          type: string
+          pattern: '^\+?[1-9]\d{9,14}$'
+          description: Phone number in E.164 format (with or without + prefix)
+          example: "+1234567890"
+        code:
+          type: string
+          pattern: '^\d{6}$'
+          description: 6-digit verification code
+          example: "123456"
+      additionalProperties: false
+
+    OTPRequestSuccess:
+      type: object
+      required:
+        - success
+        - message
+      properties:
+        success:
+          type: boolean
+          const: true
+        message:
+          type: string
+          example: "Verification code sent successfully"
+        messageId:
+          type: string
+          description: WhatsApp message ID (if available)
+          example: "wamid.ABC123"
+      additionalProperties: false
+
+    OTPVerifySuccess:
+      type: object
+      required:
+        - success
+        - message
+      properties:
+        success:
+          type: boolean
+          const: true
+        message:
+          type: string
+          example: "Verification successful"
+      additionalProperties: false
+
+    OTPVerifyError:
+      type: object
+      required:
+        - success
+        - error
+      properties:
+        success:
+          type: boolean
+          const: false
+        error:
+          type: string
+          example: "Invalid verification code."
+        attemptsRemaining:
+          type: integer
+          minimum: 0
+          description: Number of verification attempts remaining
+          example: 4
+      additionalProperties: false
+
+    CooldownErrorResponse:
+      type: object
+      required:
+        - success
+        - error
+      properties:
+        success:
+          type: boolean
+          const: false
+        error:
+          type: string
+          example: "Too many recent requests. Please wait before requesting another OTP."
+        retryAfter:
+          type: integer
+          description: Seconds until next request is allowed
+          example: 45
+      additionalProperties: false
+
+    ErrorResponse:
+      type: object
+      required:
+        - success
+        - error
+      properties:
+        success:
+          type: boolean
+          const: false
+        error:
+          type: string
+          description: Error message
+          example: "Invalid request data"
+        details:
+          type: array
+          description: Detailed validation errors (if applicable)
+          items:
+            type: object
+            properties:
+              code:
+                type: string
+              message:
+                type: string
+              path:
+                type: array
+                items:
+                  type: string
+      additionalProperties: false
+
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - timestamp
+        - uptime
+        - version
+      properties:
+        status:
+          type: string
+          const: "ok"
+        timestamp:
+          type: string
+          format: date-time
+          description: Current server timestamp in ISO 8601 format
+        uptime:
+          type: number
+          description: Server uptime in seconds
+        version:
+          type: string
+          description: Service version
+      additionalProperties: false
+
+    ReadinessResponse:
+      type: object
+      required:
+        - status
+        - timestamp
+        - checks
+      properties:
+        status:
+          type: string
+          const: "ready"
+        timestamp:
+          type: string
+          format: date-time
+          description: Current server timestamp in ISO 8601 format
+        checks:
+          type: object
+          properties:
+            redis:
+              type: string
+              enum: ["ok"]
+          required:
+            - redis
+          additionalProperties: false
+      additionalProperties: false
+
+    ReadinessErrorResponse:
+      type: object
+      required:
+        - status
+        - timestamp
+        - checks
+        - error
+      properties:
+        status:
+          type: string
+          const: "not ready"
+        timestamp:
+          type: string
+          format: date-time
+          description: Current server timestamp in ISO 8601 format
+        checks:
+          type: object
+          properties:
+            redis:
+              type: string
+              enum: ["failed"]
+          required:
+            - redis
+          additionalProperties: false
+        error:
+          type: string
+          description: Error description
+      additionalProperties: false
+
+tags:
+  - name: OTP
+    description: One-Time Password operations
+  - name: Health
+    description: Health and readiness checks
+  - name: Monitoring
+    description: Metrics and monitoring endpoints
