@@ -31,10 +31,11 @@ export class RedisClient {
       RedisClient.instance = new Redis(url, {
         enableReadyCheck: true,
         maxRetriesPerRequest: 3,
-        lazyConnect: true, // ok to keep; ensure you call .connect() before first use or issue a command
+        lazyConnect: true,
         keepAlive: 30_000,
         connectTimeout: 10_000,
         commandTimeout: 5_000,
+        family: 0, // Support both IPv4 and IPv6 (required for Railway)
         // retryStrategy: (times) => Math.min(1000 * times, 15_000), // optional: backoff
         // enableOfflineQueue: false, // optional: fail fast if disconnected
       });

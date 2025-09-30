@@ -6,6 +6,12 @@ dotenvConfig();
 const configSchema = z.object({
   PORT: z.string().transform(Number).default('3000'),
   REDIS_URL: z.string().optional(),
+  // Railway Redis variables (actual names)
+  REDISHOST: z.string().optional(),
+  REDISPORT: z.string().transform(Number).optional(),
+  REDISPASSWORD: z.string().optional(),
+  REDISUSER: z.string().optional(),
+  // Legacy variables for backward compatibility
   REDIS_PASSWORD: z.string().optional(),
   REDIS_HOST: z.string().optional(),
   REDIS_PORT: z.string().transform(Number).optional(),
@@ -37,6 +43,13 @@ function buildRedisUrl(): string {
     return env.REDIS_URL;
   }
 
+  // Try Railway's variable names first
+  if (env.REDISHOST && env.REDISPORT && env.REDISPASSWORD) {
+    const user = env.REDISUSER || 'default';
+    return `redis://${user}:${env.REDISPASSWORD}@${env.REDISHOST}:${env.REDISPORT}`;
+  }
+
+  // Fallback to legacy variable names for backward compatibility
   if (env.REDIS_HOST && env.REDIS_PORT && env.REDIS_PASSWORD) {
     const user = env.REDIS_USER || 'default';
     return `redis://${user}:${env.REDIS_PASSWORD}@${env.REDIS_HOST}:${env.REDIS_PORT}`;
