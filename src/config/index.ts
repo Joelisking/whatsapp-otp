@@ -5,7 +5,11 @@ dotenvConfig();
 
 const configSchema = z.object({
   PORT: z.string().transform(Number).default('3000'),
-  REDIS_URL: z.string().default('redis://localhost:6379'),
+  REDIS_URL: z.string().optional(),
+  REDIS_PASSWORD: z.string().optional(),
+  REDIS_HOST: z.string().optional(),
+  REDIS_PORT: z.string().transform(Number).optional(),
+  REDIS_USER: z.string().optional(),
   HMAC_SECRET: z.string().min(32),
   OTP_TTL_MINUTES: z.string().transform(Number).default('5'),
   MAX_OTP_ATTEMPTS: z.string().transform(Number).default('5'),
@@ -27,6 +31,21 @@ const configSchema = z.object({
 
 const env = configSchema.parse(process.env);
 
+// Build Redis URL from Railway components or use provided URL
+function buildRedisUrl(): string {
+  if (env.REDIS_URL) {
+    return env.REDIS_URL;
+  }
+
+  if (env.REDIS_HOST && env.REDIS_PORT && env.REDIS_PASSWORD) {
+    const user = env.REDIS_USER || 'default';
+    return `redis://${user}:${env.REDIS_PASSWORD}@${env.REDIS_HOST}:${env.REDIS_PORT}`;
+  }
+
+  // Fallback for development
+  return 'redis://localhost:6379';
+}
+
 if (env.WHATSAPP_PROVIDER === 'meta') {
   if (!env.META_ACCESS_TOKEN || !env.META_PHONE_NUMBER_ID) {
     throw new Error(
@@ -45,7 +64,7 @@ if (env.WHATSAPP_PROVIDER === 'twilio') {
 
 export const config = {
   port: env.PORT,
-  redisUrl: env.REDIS_URL,
+  redisUrl: buildRedisUrl(),
   hmacSecret: env.HMAC_SECRET,
   otpTtlMinutes: env.OTP_TTL_MINUTES,
   maxOtpAttempts: env.MAX_OTP_ATTEMPTS,
