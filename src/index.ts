@@ -5,7 +5,7 @@ import { RedisClient } from './config/redis';
 
 async function startServer(): Promise<void> {
   try {
-    const redis = RedisClient.getInstance(config.redisUrl);
+    const redis = RedisClient.getInstance();
 
     await redis.connect();
     logger.info('Connected to Redis');
@@ -47,7 +47,6 @@ async function startServer(): Promise<void> {
 
     process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
     process.on('SIGINT', () => gracefulShutdown('SIGINT'));
-
   } catch (error) {
     logger.error({ error }, 'Failed to start server');
     process.exit(1);

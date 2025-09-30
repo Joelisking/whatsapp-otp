@@ -16,6 +16,7 @@ export interface OTPData {
 export interface WhatsAppMessage {
     to: string;
     message: string;
+    otpCode?: string;
 }
 export interface WhatsAppProvider {
     sendMessage(message: WhatsAppMessage): Promise<WhatsAppSendResult>;

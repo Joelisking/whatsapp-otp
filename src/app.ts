@@ -20,45 +20,51 @@ export async function createApp(): Promise<express.Application> {
 
   await DocsController.initialize();
 
-  app.use(helmet({
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'self'"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
-        scriptSrc: ["'self'", "'unsafe-inline'"],
-        imgSrc: ["'self'", "data:", "https:"],
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          styleSrc: ["'self'", "'unsafe-inline'"],
+          scriptSrc: ["'self'", "'unsafe-inline'"],
+          imgSrc: ["'self'", 'data:', 'https:'],
+        },
       },
-    },
-  }));
+    })
+  );
 
   app.use(compression());
-  app.use(cors({
-    origin: process.env.ALLOWED_ORIGINS?.split(',') || false,
-    credentials: true,
-  }));
+  app.use(
+    cors({
+      origin: process.env.ALLOWED_ORIGINS?.split(',') || false,
+      credentials: true,
+    })
+  );
 
-  app.use(pinoHttp({
-    logger,
-    customLogLevel: (req, res, err) => {
-      if (res.statusCode >= 400 && res.statusCode < 500) {
-        return 'warn';
-      } else if (res.statusCode >= 500 || err) {
-        return 'error';
-      } else if (res.statusCode >= 300 && res.statusCode < 400) {
-        return 'silent';
-      }
-      return 'info';
-    },
-    customSuccessMessage: (req, res) => {
-      if (res.statusCode === 404) {
-        return 'Resource not found';
-      }
-      return `${req.method} ${req.url}`;
-    },
-    customErrorMessage: (req, res, err) => {
-      return `${req.method} ${req.url} - ${err.message}`;
-    },
-  }));
+  app.use(
+    pinoHttp({
+      logger,
+      customLogLevel: (req, res, err) => {
+        if (res.statusCode >= 400 && res.statusCode < 500) {
+          return 'warn';
+        } else if (res.statusCode >= 500 || err) {
+          return 'error';
+        } else if (res.statusCode >= 300 && res.statusCode < 400) {
+          return 'silent';
+        }
+        return 'info';
+      },
+      customSuccessMessage: (req, res) => {
+        if (res.statusCode === 404) {
+          return 'Resource not found';
+        }
+        return `${req.method} ${req.url}`;
+      },
+      customErrorMessage: (req, res, err) => {
+        return `${req.method} ${req.url} - ${err.message}`;
+      },
+    })
+  );
 
   app.use((req, res, next) => {
     const start = Date.now();
@@ -74,27 +80,30 @@ export async function createApp(): Promise<express.Application> {
     next();
   });
 
-  const redis = RedisClient.getInstance(config.redisUrl);
+  const redis = RedisClient.getInstance();
 
   const ipRateLimit = createIPRateLimit(redis, config.rateLimit);
   const phoneRateLimit = createPhoneRateLimit(redis, config.rateLimit);
 
-  app.use(express.json({
-    limit: '10mb',
-    verify: rawBodyParser,
-  }));
+  app.use(
+    express.json({
+      limit: '10mb',
+      verify: rawBodyParser,
+    })
+  );
 
-  const whatsappProvider = config.whatsappProvider === 'meta'
-    ? new MetaWhatsAppProvider(
-        config.meta.accessToken,
-        config.meta.phoneNumberId,
-        config.meta.apiVersion
-      )
-    : new TwilioWhatsAppProvider(
-        config.twilio.accountSid,
-        config.twilio.authToken,
-        config.twilio.fromNumber
-      );
+  const whatsappProvider =
+    config.whatsappProvider === 'meta'
+      ? new MetaWhatsAppProvider(
+          config.meta.accessToken,
+          config.meta.phoneNumberId,
+          config.meta.apiVersion
+        )
+      : new TwilioWhatsAppProvider(
+          config.twilio.accountSid,
+          config.twilio.authToken,
+          config.twilio.fromNumber
+        );
 
   const otpService = new OTPService(
     redis,
@@ -137,14 +146,16 @@ export async function createApp(): Promise<express.Application> {
     });
   });
 
-  app.use((err: Error, req: express.Request, res: express.Response, _next: express.NextFunction) => {
-    logger.error({ err, req: { method: req.method, url: req.url } }, 'Unhandled error');
+  app.use(
+    (err: Error, req: express.Request, res: express.Response, _next: express.NextFunction) => {
+      logger.error({ err, req: { method: req.method, url: req.url } }, 'Unhandled error');
 
-    res.status(500).json({
-      success: false,
-      error: 'Internal server error',
-    });
-  });
+      res.status(500).json({
+        success: false,
+        error: 'Internal server error',
+      });
+    }
+  );
 
   return app;
 }

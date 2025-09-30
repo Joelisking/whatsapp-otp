@@ -92,7 +92,13 @@ async function createApp() {
     const otpRouter = express_1.default.Router();
     otpRouter.use(ipRateLimit);
     otpRouter.use(phoneRateLimit);
-    otpRouter.use((0, auth_1.hmacAuth)(config_1.config.hmacSecret));
+    // Only require HMAC auth in production
+    if (process.env.NODE_ENV === 'production') {
+        otpRouter.use((0, auth_1.hmacAuth)(config_1.config.hmacSecret));
+    }
+    else {
+        logger_1.logger.info('Running in development mode - HMAC authentication disabled');
+    }
     otpRouter.post('/request', otpController.requestOTP.bind(otpController));
     otpRouter.post('/verify', otpController.verifyOTP.bind(otpController));
     app.use('/otp', otpRouter);

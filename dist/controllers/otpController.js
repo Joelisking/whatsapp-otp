@@ -61,6 +61,7 @@ class OTPController {
             const messageResult = await this.whatsappProvider.sendMessage({
                 to: phoneNumber,
                 message: this.createOTPMessage(otpResult.code),
+                otpCode: otpResult.code,
             });
             if (!messageResult.success) {
                 logger_1.logger.error({

@@ -55,10 +55,35 @@ class MetaWhatsAppProvider extends WhatsAppProvider_1.BaseWhatsAppProvider {
             const payload = {
                 messaging_product: 'whatsapp',
                 to: formattedPhoneNumber,
-                type: 'text',
-                text: {
-                    body: message.message,
-                },
+                type: 'template',
+                template: {
+                    name: 'otp_verification',
+                    language: {
+                        code: 'en_US'
+                    },
+                    components: [
+                        {
+                            type: 'body',
+                            parameters: [
+                                {
+                                    type: 'text',
+                                    text: message.otpCode || '123456'
+                                }
+                            ]
+                        },
+                        {
+                            type: 'button',
+                            sub_type: 'url',
+                            index: 0,
+                            parameters: [
+                                {
+                                    type: 'text',
+                                    text: message.otpCode || '123456'
+                                }
+                            ]
+                        }
+                    ]
+                }
             };
             logger_1.logger.info({
                 provider: 'meta',
